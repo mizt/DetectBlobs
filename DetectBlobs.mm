@@ -1,5 +1,7 @@
 #import <Foundation/Foundation.h>
+#import <simd/simd.h>
 #import <vector>
+#import <numeric>
 
 void search(std::vector<std::vector<unsigned int>> *connections, unsigned int target, long *use, int depth) {
 	
@@ -19,41 +21,39 @@ int main(int argc, char *argv[]) {
 		double then = CFAbsoluteTimeGetCurrent();
 		srandom(then);
 
-		NSString *src = [NSString stringWithContentsOfFile:@"./marge.obj" encoding:NSUTF8StringEncoding error:nil];
-		NSArray *lines = [src componentsSeparatedByCharactersInSet: [NSCharacterSet newlineCharacterSet]];
-		
 		NSCharacterSet *whitespaces = [NSCharacterSet whitespaceCharacterSet];
-				
-		std::vector<float> v;
-		std::vector<unsigned int> f;
+		
+		NSString *src = [NSString stringWithContentsOfFile:@"./test.obj" encoding:NSUTF8StringEncoding error:nil];
+		NSArray *lines = [src componentsSeparatedByCharactersInSet: [NSCharacterSet newlineCharacterSet]];
+						
+		std::vector<simd::float3> _v;
+		std::vector<simd::uint3> _f;
 		
 		for(int k=0; k<[lines count]; k++) {
 			NSArray *arr = [lines[k] componentsSeparatedByCharactersInSet:whitespaces];
 			if([arr count]>0) {
 				if([arr[0] isEqualToString:@"v"]) {
 					
-					float x = [arr[1] doubleValue];
-					float y = [arr[2] doubleValue];
-					float z = [arr[3] doubleValue];
+					_v.push_back(simd::float3{
+						[arr[1] floatValue],
+						[arr[2] floatValue],
+						[arr[3] floatValue],
+					});
 					
-					v.push_back(x);
-					v.push_back(y);
-					v.push_back(z);
-					
-					v.push_back([arr[4] doubleValue]);
-					v.push_back([arr[5] doubleValue]);
-					v.push_back([arr[6] doubleValue]);
 				}
 				else if([arr[0] isEqualToString:@"f"]) {
-					f.push_back([arr[1] intValue]-1);
-					f.push_back([arr[2] intValue]-1);
-					f.push_back([arr[3] intValue]-1);
+					
+					_f.push_back(simd::uint3{
+						(unsigned int)([arr[1] intValue]-1),
+						(unsigned int)([arr[2] intValue]-1),
+						(unsigned int)([arr[3] intValue]-1)
+					});
 				}
 			}
 		}
 				
-		unsigned long verticesNum = v.size()/6;
-		unsigned long facesNum = f.size()/3;
+		unsigned int verticesNum = _v.size();
+		unsigned int facesNum = _f.size();
 
 		std::vector<std::vector<unsigned int>> connections;
 		for(int n=0; n<verticesNum; n++) {
@@ -62,20 +62,14 @@ int main(int argc, char *argv[]) {
 		
 		for(int n=0; n<facesNum; n++) {
 			
-			unsigned int faces[3] = {
-				f[n*3+0],
-				f[n*3+1],
-				f[n*3+2]
-			};
+			connections[_f[n].x].push_back(_f[n].y);
+			connections[_f[n].x].push_back(_f[n].z);
 			
-			connections[faces[0]].push_back(faces[1]);
-			connections[faces[0]].push_back(faces[2]);
+			connections[_f[n].y].push_back(_f[n].x);
+			connections[_f[n].y].push_back(_f[n].z);
 			
-			connections[faces[1]].push_back(faces[0]);
-			connections[faces[1]].push_back(faces[2]);
-			
-			connections[faces[2]].push_back(faces[0]);
-			connections[faces[2]].push_back(faces[1]);
+			connections[_f[n].z].push_back(_f[n].x);
+			connections[_f[n].z].push_back(_f[n].y);
 		} 
 		
 		long *use = new long[verticesNum];
@@ -92,63 +86,98 @@ int main(int argc, char *argv[]) {
 			}
 		}
 		
-		NSLog(@"depth is %ld",depth+1);
-		
-		float **colors = new float *[depth+1];
-		for(int n=0; n<depth+1; n++) {
-			colors[n] = new float[3];
+		if(depth!=-1) {
 			
-			if(n==0) {
-				colors[n][0] = 0.5;
-				colors[n][1] = 0.5;
-				colors[n][2] = 0.5;
+			++depth;
+			
+			NSLog(@"depth is %ld",depth);
+
+			unsigned int *point = new unsigned int[depth];
+			for(int n=0; n<depth; n++) point[n] = 0;
+			
+			for(int n=0; n<verticesNum; n++) {
+				if(use[n]!=-1) {
+					point[use[n]]++;
+				}
 			}
-			else {
-				colors[n][0] = (random()%255)/255.0;
-				colors[n][1] = (random()%255)/255.0;
-				colors[n][2] = (random()%255)/255.0;
+			
+			std::vector<int> index(depth);
+			std::iota(index.begin(),index.end(),0);
+			
+			std::sort(
+				index.begin(),index.end(),
+				[&](int x, int y) { return point[x]>point[y]; }
+			);
+						
+			simd::float3 *colors = new simd::float3[depth];
+			for(int n=0; n<depth; n++) {
+				
+				if(n==0) {
+					colors[n].x = colors[n].y = colors[n].z = 0.75;
+				}
+				else {
+					colors[n].x = (random()%255)/255.0;
+					colors[n].y = (random()%255)/255.0;
+					colors[n].z = (random()%255)/255.0;
+				}
 			}
+			
+			for(int n=0; n<depth; n++) {
+
+				std::vector<simd::float3> v;
+				std::vector<simd::uint3> f;
+				
+				unsigned int o = 0;
+
+				int tmp = index[n];
+				
+				simd::float3 color = colors[n];
+				
+				for(int k=0; k<facesNum; k++) {
+					
+					if(use[_f[k].x]==tmp&&use[_f[k].y]==tmp&&use[_f[k].z]==tmp) {
+						
+						v.push_back(_v[_f[k].x]);
+						v.push_back(_v[_f[k].y]);
+						v.push_back(_v[_f[k].z]);
+						
+						f.push_back(simd::uint3{o,o+1,o+2});
+						
+						o+=3;
+					}
+				}
+				
+				NSMutableString *obj = [NSMutableString stringWithString:@""];
+				
+				for(int k=0; k<v.size(); k++) {
+					
+					[obj appendString:[NSString stringWithFormat:@"v %f %f %f %f %f %f\n",v[k].x,v[k].y,v[k].z,color.x,color.y,color.z]];
+					
+				}
+				
+				for(int k=0; k<f.size(); k++) {
+							
+					[obj appendString:[NSString stringWithFormat:@"f %d %d %d\n",1+f[k].x,1+f[k].y,1+f[k].z]];
+								
+				}
+				
+				[obj writeToFile:[NSString stringWithFormat:@"./dst/%d.obj",n] atomically:YES encoding:NSUTF8StringEncoding error:nil];
+				
+				
+				f.clear();
+				v.clear();
+
+			}
+			
+			_f.clear();
+			_v.clear();
+			
+			index.clear();
+			
+			delete[] point;
+			delete[] colors;
 		}
 		
-		NSMutableString *obj = [NSMutableString stringWithString:@""];
-
-		for(int n=0; n<verticesNum; n++) {
-			
-			if(use[n]==-1) {
-				
-				[obj appendString:[NSString stringWithFormat:@"v %0.4f %0.4f %04f %0.4f %0.4f %0.4f\n",
-					v[n*6+0],
-					v[n*6+1],
-					v[n*6+2],
-					v[n*6+3],
-					v[n*6+4],
-					v[n*6+5]
-				]];
-				
-			}
-			else {
-				
-				[obj appendString:[NSString stringWithFormat:@"v %0.4f %0.4f %04f %0.4f %0.4f %0.4f\n",
-					v[n*6+0],
-					v[n*6+1],
-					v[n*6+2],
-					colors[use[n]][0],
-					colors[use[n]][1],
-					colors[use[n]][2]
-				]];
-			}
-		} 
-		
-		for(int n=0; n<facesNum; n++) {
-			[obj appendString:[NSString stringWithFormat:@"f %d %d %d\n",
-				1+f[n*3+0],
-				1+f[n*3+1],
-				1+f[n*3+2]
-			]];
-		} 
-		
-		[obj writeToFile:@"blobs.obj" atomically:YES encoding:NSUTF8StringEncoding error:nil];
-
 		NSLog(@"%f",CFAbsoluteTimeGetCurrent()-then);
 	}
 }

@@ -9,7 +9,7 @@ int main(int argc, char *argv[]) {
 		
 		double then = CFAbsoluteTimeGetCurrent();
 
-		NSString *src = [NSString stringWithContentsOfFile:@"./src.obj" encoding:NSUTF8StringEncoding error:nil];
+		NSString *src = [NSString stringWithContentsOfFile:@"./test.obj" encoding:NSUTF8StringEncoding error:nil];
 		NSArray *lines = [src componentsSeparatedByCharactersInSet: [NSCharacterSet newlineCharacterSet]];
 		
 		NSCharacterSet *whitespaces = [NSCharacterSet whitespaceCharacterSet];
